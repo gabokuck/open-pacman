@@ -148,12 +148,6 @@ function decideGhost( game, g ) {
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
 
-  // Dentro del pen (y > 12): todos los liberados van a su celda puerta (x, 12).
-  if ( g.released && Math.round( g.y ) > 12 ) {
-    g.dir = pickByManhattan( choices, g, g.x, 12 );
-    return;
-  }
-
   // Fuera del pen: despachar por arquetipo.
   const px = Math.round( p.x );
   const py = Math.round( p.y );
@@ -207,24 +201,6 @@ function moveGhost( game, g ) {
     g.y = Math.round( g.y );
     decideGhost( game, g );
     if ( !canMove( grid, g.x, g.y, g.dir, 'ghost' ) ) return;
-    // Cola en la puerta: si nuestro siguiente paso entra en la celda puerta
-    // y ya hay otro fantasma liberado ahi, esperamos 1 frame.
-    const dd = DIRS[ g.dir ];
-    const nx = g.x + dd.x;
-    const ny = g.y + dd.y;
-    if (
-      Math.round( g.y ) > 12 &&
-      Math.round( ny ) === 12 &&
-      ( nx === 13 || nx === 14 )
-    ) {
-      const blocked = game.ghosts.some( ( other ) =>
-        other !== g &&
-        other.released &&
-        Math.round( other.x ) === nx &&
-        Math.round( other.y ) === 12
-      );
-      if ( blocked ) return;
-    }
   }
 
   if ( g.released ) {
