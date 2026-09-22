@@ -1,6 +1,6 @@
 # SPEC 02 — Fantasmas aparecen directamente en el mapa al liberarse
 
-> **Status:** Aprobado
+> **Status:** Implementado
 > **Depends on:** SPEC 01
 > **Date:** 2026-09-22
 > **Objective:** Cuando un fantasma se libera del pen, teletransportarse a la celda (x, 11) sobre su columna de puerta, mirar hacia Pac-Man y empezar a moverse por su arquetipo, en lugar de pathfindear dentro del pen.
