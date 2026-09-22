@@ -1,6 +1,6 @@
 # SPEC 01 — Cuatro fantasmas con arquetipos distintos
 
-> **Status:** Aprobado
+> **Status:** Implementado
 > **Depends on:** —
 > **Date:** 2026-09-22
 > **Objective:** Poner 4 fantasmas con comportamientos diferenciados (cazador, emboscador, flanqueador, vagabundo) que nacen dentro del pen y salen uno cada 1,5 s, cada uno con color y lógica propia.

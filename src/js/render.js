@@ -100,15 +100,18 @@ function drawPacman( ctx, p, frame ) {
 
 function drawGhost( ctx, g, color ) {
   const { cx, cy } = cellCenter( g.x, g.y );
+  // Bobbing: solo mientras el fantasma este aun en el pen. ±1 px vertical.
+  const bob = g.released ? 0 : Math.sin( g.bobPhase * 0.3 );
+  const ocy = cy + bob;
   const r = TILE / 2 - 1;
-  const top = cy - r;
-  const bottom = cy + r;
+  const top = ocy - r;
+  const bottom = ocy + r;
   const left = cx - r;
   const right = cx + r;
 
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.arc( cx, cy - 1, r, Math.PI, 0, false ); // cabeza
+  ctx.arc( cx, ocy - 1, r, Math.PI, 0, false ); // cabeza
   ctx.lineTo( right, bottom );
   // falda ondulada (3 picos)
   ctx.lineTo( right - r * 0.66, bottom - 4 );
@@ -125,11 +128,11 @@ function drawGhost( ctx, g, color ) {
   for ( const off of [ -3.5, 3.5 ] ) {
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc( cx + off, cy - 1, 3, 0, Math.PI * 2 );
+    ctx.arc( cx + off, ocy - 1, 3, 0, Math.PI * 2 );
     ctx.fill();
     ctx.fillStyle = '#0000bb';
     ctx.beginPath();
-    ctx.arc( cx + off + ex, cy - 1 + ey, 1.5, 0, Math.PI * 2 );
+    ctx.arc( cx + off + ex, ocy - 1 + ey, 1.5, 0, Math.PI * 2 );
     ctx.fill();
   }
 }

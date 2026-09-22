@@ -28,6 +28,7 @@ function createGame() {
     score: 0,
     lives: 3,
     dotsRemaining: dots,
+    releaseTimer: 0,         // frames desde el inicio; libera fantasmas escalonadamente
     grid,
     pacman: {
       x: PACMAN_START.x,
@@ -36,18 +37,43 @@ function createGame() {
       nextDir: null,
       speed: PACMAN_SPEED,
     },
-    ghosts: GHOST_STARTS.map( ( g ) => ( {
+    ghosts: GHOST_STARTS.map( ( g, i ) => ( {
       x: g.x,
       y: g.y,
       dir: 'up',
       speed: GHOST_SPEED,
-      kind: g.kind,
+      kind: g.kind,        // 'hunter' | 'ambusher' | 'flanker' | 'wanderer'
+      released: false,     // true cuando han pasado sus 1,5 s de releaseOrder * 90 frames
+      releaseOrder: i,     // 0..3
+      bobPhase: 0,         // contador de frames para el bobbing
     } ) ),
   };
 }
 
 function aligned( v ) {
   return Math.abs( v - Math.round( v ) ) < 1e-3;
+}
+
+function clamp( v, lo, hi ) {
+  return Math.max( lo, Math.min( hi, v ) );
+}
+
+// De las direcciones validas en `choices`, elige la que minimiza la distancia
+// Manhattan desde la celda destino (g + d) hasta el objetivo (tx, ty).
+function pickByManhattan( choices, g, tx, ty ) {
+  let best = choices[ 0 ];
+  let bestDist = Infinity;
+  for ( const dir of choices ) {
+    const d = DIRS[ dir ];
+    const nx = g.x + d.x;
+    const ny = g.y + d.y;
+    const dist = Math.abs( nx - tx ) + Math.abs( ny - ty );
+    if ( dist < bestDist ) {
+      bestDist = dist;
+      best = dir;
+    }
+  }
+  return best;
 }
 
 // Una celda es muro para el actor dado?
@@ -113,6 +139,8 @@ function movePacman( game ) {
 function decideGhost( game, g ) {
   const grid = game.grid;
   const p = game.pacman;
+  const width = grid[ 0 ].length;
+  const height = grid.length;
 
   const options = Object.keys( DIRS ).filter(
     ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir, 'ghost' )
@@ -120,28 +148,43 @@ function decideGhost( game, g ) {
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
 
+  // Dentro del pen (y > 12): todos los liberados van a su celda puerta (x, 12).
+  if ( g.released && Math.round( g.y ) > 12 ) {
+    g.dir = pickByManhattan( choices, g, g.x, 12 );
+    return;
+  }
+
+  // Fuera del pen: despachar por arquetipo.
+  const px = Math.round( p.x );
+  const py = Math.round( p.y );
+
   if ( g.kind === 'hunter' ) {
-    const px = Math.round( p.x );
-    const py = Math.round( p.y );
-    let best = choices[ 0 ];
-    let bestDist = Infinity;
-    for ( const dir of choices ) {
-      const d = DIRS[ dir ];
-      const nx = g.x + d.x;
-      const ny = g.y + d.y;
-      const dist = Math.abs( nx - px ) + Math.abs( ny - py );
-      if ( dist < bestDist ) {
-        bestDist = dist;
-        best = dir;
-      }
-    }
-    g.dir = best;
+    g.dir = pickByManhattan( choices, g, px, py );
+  } else if ( g.kind === 'ambusher' ) {
+    // Apuntar a 4 celdas por delante de Pac-Man en su direccion actual.
+    const d = DIRS[ p.dir ] || { x: 0, y: 0 };
+    const tx = clamp( px + d.x * 4, 0, width - 1 );
+    const ty = clamp( py + d.y * 4, 0, height - 1 );
+    g.dir = pickByManhattan( choices, g, tx, ty );
+  } else if ( g.kind === 'flanker' ) {
+    // Reflejar a Pac-Man sobre si mismo: target = 2*pac - ghost (clamp al grid).
+    const tx = clamp( px * 2 - Math.round( g.x ), 0, width - 1 );
+    const ty = clamp( py * 2 - Math.round( g.y ), 0, height - 1 );
+    g.dir = pickByManhattan( choices, g, tx, ty );
   } else {
+    // 'wanderer' y fallback: direccion al azar entre las validas.
     g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
   }
 }
 
 function moveGhost( game, g ) {
+  // Bobbing: contador continuo (el render solo lo aplica si !released).
+  g.bobPhase++;
+  // Liberacion escalonada por tiempo: cada 1,5 s (90 frames) sale el siguiente.
+  if ( !g.released && game.releaseTimer >= g.releaseOrder * 90 ) {
+    g.released = true;
+  }
+
   const grid = game.grid;
   const width = grid[ 0 ].length;
 
@@ -150,6 +193,24 @@ function moveGhost( game, g ) {
     g.y = Math.round( g.y );
     decideGhost( game, g );
     if ( !canMove( grid, g.x, g.y, g.dir, 'ghost' ) ) return;
+    // Cola en la puerta: si nuestro siguiente paso entra en la celda puerta
+    // y ya hay otro fantasma liberado ahi, esperamos 1 frame.
+    const dd = DIRS[ g.dir ];
+    const nx = g.x + dd.x;
+    const ny = g.y + dd.y;
+    if (
+      Math.round( g.y ) > 12 &&
+      Math.round( ny ) === 12 &&
+      ( nx === 13 || nx === 14 )
+    ) {
+      const blocked = game.ghosts.some( ( other ) =>
+        other !== g &&
+        other.released &&
+        Math.round( other.x ) === nx &&
+        Math.round( other.y ) === 12
+      );
+      if ( blocked ) return;
+    }
   }
 
   const d = DIRS[ g.dir ];
@@ -164,10 +225,15 @@ function resetPositions( game ) {
   p.y = PACMAN_START.y;
   p.dir = 'left';
   p.nextDir = null;
+  // Volver a liberar los fantasmas desde cero (releaseTimer + released: false).
+  game.releaseTimer = 0;
   game.ghosts.forEach( ( g, i ) => {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
     g.dir = 'up';
+    g.released = false;
+    g.releaseOrder = i;
+    g.bobPhase = 0;
   } );
 }
 
@@ -176,6 +242,7 @@ function collides( a, b ) {
 }
 
 function update( game ) {
+  game.releaseTimer++;
   movePacman( game );
   game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
 
