@@ -148,12 +148,6 @@ function decideGhost( game, g ) {
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
 
-  // Dentro del pen (y > 12): todos los liberados van a su celda puerta (x, 12).
-  if ( g.released && Math.round( g.y ) > 12 ) {
-    g.dir = pickByManhattan( choices, g, g.x, 12 );
-    return;
-  }
-
   // Fuera del pen: despachar por arquetipo.
   const px = Math.round( p.x );
   const py = Math.round( p.y );
@@ -181,8 +175,22 @@ function moveGhost( game, g ) {
   // Bobbing: contador continuo (el render solo lo aplica si !released).
   g.bobPhase++;
   // Liberacion escalonada por tiempo: cada 1,5 s (90 frames) sale el siguiente.
+  // Capturamos el estado previo para detectar la transicion released: false -> true.
+  const wasReleased = g.released;
   if ( !g.released && game.releaseTimer >= g.releaseOrder * 90 ) {
     g.released = true;
+  }
+  // Teletransporte: al pasar de en-pen a libre, saltar a la celda puerta (x, 11).
+  if ( wasReleased === false && g.released === true ) {
+    g.y = 11;
+    // Direccion inicial: la valida (no-opuesta, no-muro) desde (x, 11) que
+    // minimiza la distancia Manhattan a Pac-Man.
+    const options = Object.keys( DIRS ).filter(
+      ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( game.grid, g.x, g.y, dir, 'ghost' )
+    );
+    const px = Math.round( game.pacman.x );
+    const py = Math.round( game.pacman.y );
+    g.dir = pickByManhattan( options, g, px, py );
   }
 
   const grid = game.grid;
@@ -193,30 +201,14 @@ function moveGhost( game, g ) {
     g.y = Math.round( g.y );
     decideGhost( game, g );
     if ( !canMove( grid, g.x, g.y, g.dir, 'ghost' ) ) return;
-    // Cola en la puerta: si nuestro siguiente paso entra en la celda puerta
-    // y ya hay otro fantasma liberado ahi, esperamos 1 frame.
-    const dd = DIRS[ g.dir ];
-    const nx = g.x + dd.x;
-    const ny = g.y + dd.y;
-    if (
-      Math.round( g.y ) > 12 &&
-      Math.round( ny ) === 12 &&
-      ( nx === 13 || nx === 14 )
-    ) {
-      const blocked = game.ghosts.some( ( other ) =>
-        other !== g &&
-        other.released &&
-        Math.round( other.x ) === nx &&
-        Math.round( other.y ) === 12
-      );
-      if ( blocked ) return;
-    }
   }
 
-  const d = DIRS[ g.dir ];
-  g.x += d.x * g.speed;
-  g.y += d.y * g.speed;
-  wrapTunnel( g, width );
+  if ( g.released ) {
+    const d = DIRS[ g.dir ];
+    g.x += d.x * g.speed;
+    g.y += d.y * g.speed;
+    wrapTunnel( g, width );
+  }
 }
 
 function resetPositions( game ) {
