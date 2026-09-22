@@ -70,11 +70,18 @@ function drawDots( ctx, grid ) {
   ctx.fillStyle = DOT_COLOR;
   for ( let y = 0; y < grid.length; y++ ) {
     for ( let x = 0; x < grid[ 0 ].length; x++ ) {
-      if ( grid[ y ][ x ] !== 2 ) continue;
-      const { cx, cy } = cellCenter( x, y );
-      ctx.beginPath();
-      ctx.arc( cx, cy, 2.5, 0, Math.PI * 2 );
-      ctx.fill();
+      const v = grid[ y ][ x ];
+      if ( v === 2 ) {
+        const { cx, cy } = cellCenter( x, y );
+        ctx.beginPath();
+        ctx.arc( cx, cy, 2.5, 0, Math.PI * 2 );
+        ctx.fill();
+      } else if ( v === 4 ) {
+        const { cx, cy } = cellCenter( x, y );
+        ctx.beginPath();
+        ctx.arc( cx, cy, 6, 0, Math.PI * 2 );
+        ctx.fill();
+      }
     }
   }
 }
@@ -98,43 +105,52 @@ function drawPacman( ctx, p, frame ) {
   ctx.fill();
 }
 
-function drawGhost( ctx, g, color ) {
-  const { cx, cy } = cellCenter( g.x, g.y );
-  // Bobbing: solo mientras el fantasma este aun en el pen. ±1 px vertical.
-  const bob = g.released ? 0 : Math.sin( g.bobPhase * 0.3 );
-  const ocy = cy + bob;
-  const r = TILE / 2 - 1;
-  const top = ocy - r;
-  const bottom = ocy + r;
-  const left = cx - r;
-  const right = cx + r;
-
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc( cx, ocy - 1, r, Math.PI, 0, false ); // cabeza
-  ctx.lineTo( right, bottom );
-  // falda ondulada (3 picos)
-  ctx.lineTo( right - r * 0.66, bottom - 4 );
-  ctx.lineTo( cx, bottom );
-  ctx.lineTo( left + r * 0.66, bottom - 4 );
-  ctx.lineTo( left, bottom );
-  ctx.closePath();
-  ctx.fill();
-
-  // ojos mirando segun direccion
-  const dir = DIRS[ g.dir ] || { x: 0, y: 0 };
-  const ex = dir.x * 1.6;
-  const ey = dir.y * 1.6;
+function drawGhostEyes( ctx, cx, cy, dir ) {
+  const d = DIRS[ dir ] || { x: 0, y: 0 };
+  const ex = d.x * 1.6;
+  const ey = d.y * 1.6;
   for ( const off of [ -3.5, 3.5 ] ) {
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc( cx + off, ocy - 1, 3, 0, Math.PI * 2 );
+    ctx.arc( cx + off, cy, 3, 0, Math.PI * 2 );
     ctx.fill();
     ctx.fillStyle = '#0000bb';
     ctx.beginPath();
-    ctx.arc( cx + off + ex, ocy - 1 + ey, 1.5, 0, Math.PI * 2 );
+    ctx.arc( cx + off + ex, cy + ey, 1.5, 0, Math.PI * 2 );
     ctx.fill();
   }
+}
+
+function drawGhost( ctx, g, color, mode, frightenedTimer, frame ) {
+  const { cx, cy } = cellCenter( g.x, g.y );
+  const r = TILE / 2 - 1;
+
+  if ( mode === 'eyes' ) {
+    drawGhostEyes( ctx, cx, cy, g.dir );
+    return;
+  }
+
+  const bob = ( !g.released ) ? Math.sin( g.bobPhase * 0.3 ) : 0;
+  const ocy = cy + bob;
+
+  const flashing = mode === 'frightened' && frightenedTimer <= 120
+                && Math.floor( frame / 10 ) % 2 === 0;
+  const fillColor = flashing ? '#ffffff'
+                  : mode === 'frightened' ? '#2121ff'
+                  : color;
+
+  ctx.fillStyle = fillColor;
+  ctx.beginPath();
+  ctx.arc( cx, ocy - 1, r, Math.PI, 0, false );
+  ctx.lineTo( cx + r, ocy + r );
+  ctx.lineTo( cx + r * 0.34, ocy + r - 4 );
+  ctx.lineTo( cx, ocy + r );
+  ctx.lineTo( cx - r * 0.34, ocy + r - 4 );
+  ctx.lineTo( cx - r, ocy + r );
+  ctx.closePath();
+  ctx.fill();
+
+  drawGhostEyes( ctx, cx, ocy - 1, g.dir );
 }
 
 function drawHUD( ctx, game, W ) {
@@ -161,7 +177,9 @@ function draw( ctx, game, frame ) {
   drawDoor( ctx, grid );
   drawDots( ctx, grid );
   drawPacman( ctx, game.pacman, frame );
-  game.ghosts.forEach( ( g, i ) => drawGhost( ctx, g, GHOST_COLORS[ i ] || '#ff0000' ) );
+  game.ghosts.forEach( ( g, i ) =>
+    drawGhost( ctx, g, GHOST_COLORS[ i ] || '#ff0000', g.mode, game.frightenedTimer, frame )
+  );
   drawHUD( ctx, game, W );
 }
 

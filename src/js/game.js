@@ -12,6 +12,10 @@ const OPPOSITE = { left: 'right', right: 'left', up: 'down', down: 'up' };
 
 const PACMAN_SPEED = 0.125; // 1/8 celda/frame -> alinea cada 8 frames
 const GHOST_SPEED = 0.1;    // 1/10 celda/frame
+const FRIGHTEN_DURATION = 360;  // 6 s a 60 fps
+const FRIGHTEN_SPEED = GHOST_SPEED * 0.5;
+const EYES_SPEED = GHOST_SPEED * 2;
+const GHOST_POINTS = [ 200, 400, 800, 1600 ];
 
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
 // dots sin destruir el original, y reiniciar.
@@ -29,6 +33,8 @@ function createGame() {
     lives: 3,
     dotsRemaining: dots,
     releaseTimer: 0,         // frames desde el inicio; libera fantasmas escalonadamente
+    frightenedTimer: 0,      // frames restantes del modo frightened (0 = inactivo)
+    ghostChain: 0,           // fantasmas comidos en la fase frightened actual
     grid,
     pacman: {
       x: PACMAN_START.x,
@@ -46,6 +52,7 @@ function createGame() {
       released: false,     // true cuando han pasado sus 1,5 s de releaseOrder * 90 frames
       releaseOrder: i,     // 0..3
       bobPhase: 0,         // contador de frames para el bobbing
+      mode: 'normal',      // 'normal' | 'frightened' | 'eyes'
     } ) ),
   };
 }
@@ -125,6 +132,15 @@ function movePacman( game ) {
       grid[ p.y ][ p.x ] = 0;
       game.score += 10;
       game.dotsRemaining--;
+    } else if ( grid[ p.y ][ p.x ] === 4 ) {
+      grid[ p.y ][ p.x ] = 0;
+      game.score += 50;
+      game.dotsRemaining--;
+      game.frightenedTimer = FRIGHTEN_DURATION;
+      // NO resetear game.ghostChain: la cadena continua si ya habia una.
+      for ( const g of game.ghosts ) {
+        if ( g.released && g.mode !== 'eyes' ) g.mode = 'frightened';
+      }
     }
     // Si no puede seguir, se detiene en la celda.
     if ( !canMove( grid, p.x, p.y, p.dir, 'pacman' ) ) return;
@@ -147,6 +163,18 @@ function decideGhost( game, g ) {
   );
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
+
+  // 'eyes': Manhattan hacia (g.x, 11); el fantasma ya esta "released" cuando come Pac-Man.
+  if ( g.mode === 'eyes' ) {
+    g.dir = pickByManhattan( choices, g, g.x, 11 );
+    return;
+  }
+
+  // 'frightened': direccion al azar entre las validas, sin arquetipo.
+  if ( g.mode === 'frightened' ) {
+    g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
+    return;
+  }
 
   // Fuera del pen: despachar por arquetipo.
   const px = Math.round( p.x );
@@ -174,6 +202,15 @@ function decideGhost( game, g ) {
 function moveGhost( game, g ) {
   // Bobbing: contador continuo (el render solo lo aplica si !released).
   g.bobPhase++;
+
+  // Velocidad segun el modo actual.
+  if ( g.mode === 'eyes' ) {
+    g.speed = EYES_SPEED;
+  } else if ( game.frightenedTimer > 0 && g.mode === 'frightened' ) {
+    g.speed = FRIGHTEN_SPEED;
+  } else {
+    g.speed = GHOST_SPEED;
+  }
   // Liberacion escalonada por tiempo: cada 1,5 s (90 frames) sale el siguiente.
   // Capturamos el estado previo para detectar la transicion released: false -> true.
   const wasReleased = g.released;
@@ -208,6 +245,11 @@ function moveGhost( game, g ) {
     g.x += d.x * g.speed;
     g.y += d.y * g.speed;
     wrapTunnel( g, width );
+
+    // 'eyes': al alcanzar y=11 en celda alineada, vuelve a 'normal'.
+    if ( g.mode === 'eyes' && aligned( g.x ) && aligned( g.y ) && g.y === 11 ) {
+      g.mode = 'normal';
+    }
   }
 }
 
@@ -219,6 +261,8 @@ function resetPositions( game ) {
   p.nextDir = null;
   // Volver a liberar los fantasmas desde cero (releaseTimer + released: false).
   game.releaseTimer = 0;
+  game.frightenedTimer = 0;
+  game.ghostChain = 0;
   game.ghosts.forEach( ( g, i ) => {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
@@ -226,6 +270,7 @@ function resetPositions( game ) {
     g.released = false;
     g.releaseOrder = i;
     g.bobPhase = 0;
+    g.mode = 'normal';
   } );
 }
 
@@ -239,14 +284,28 @@ function update( game ) {
   game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
 
   for ( const g of game.ghosts ) {
-    if ( collides( game.pacman, g ) ) {
-      game.lives--;
-      if ( game.lives <= 0 ) {
-        game.state = 'lost';
-        return;
-      }
-      resetPositions( game );
-      break;
+    if ( !collides( game.pacman, g ) ) continue;
+    if ( g.mode === 'eyes' ) continue;
+    if ( g.mode === 'frightened' ) {
+      g.mode = 'eyes';
+      game.score += GHOST_POINTS[ game.ghostChain ];
+      if ( game.ghostChain < GHOST_POINTS.length - 1 ) game.ghostChain++;
+      continue;
+    }
+    game.lives--;
+    if ( game.lives <= 0 ) {
+      game.state = 'lost';
+      return;
+    }
+    resetPositions( game );
+    break;
+  }
+
+  if ( game.frightenedTimer > 0 ) {
+    game.frightenedTimer--;
+    if ( game.frightenedTimer === 0 ) {
+      game.ghostChain = 0;
+      for ( const g of game.ghosts ) if ( g.mode === 'frightened' ) g.mode = 'normal';
     }
   }
 
