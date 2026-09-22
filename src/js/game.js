@@ -181,8 +181,15 @@ function moveGhost( game, g ) {
   // Bobbing: contador continuo (el render solo lo aplica si !released).
   g.bobPhase++;
   // Liberacion escalonada por tiempo: cada 1,5 s (90 frames) sale el siguiente.
+  // Capturamos el estado previo para detectar la transicion released: false -> true.
+  const wasReleased = g.released;
   if ( !g.released && game.releaseTimer >= g.releaseOrder * 90 ) {
     g.released = true;
+  }
+  // Teletransporte: al pasar de en-pen a libre, saltar a la celda puerta (x, 11).
+  if ( wasReleased === false && g.released === true ) {
+    g.y = 11;
+    // elegir direccion valida desde (g.x, 11) que minimice Manhattan a Pac-Man
   }
 
   const grid = game.grid;
@@ -213,10 +220,12 @@ function moveGhost( game, g ) {
     }
   }
 
-  const d = DIRS[ g.dir ];
-  g.x += d.x * g.speed;
-  g.y += d.y * g.speed;
-  wrapTunnel( g, width );
+  if ( g.released ) {
+    const d = DIRS[ g.dir ];
+    g.x += d.x * g.speed;
+    g.y += d.y * g.speed;
+    wrapTunnel( g, width );
+  }
 }
 
 function resetPositions( game ) {
