@@ -189,7 +189,14 @@ function moveGhost( game, g ) {
   // Teletransporte: al pasar de en-pen a libre, saltar a la celda puerta (x, 11).
   if ( wasReleased === false && g.released === true ) {
     g.y = 11;
-    // elegir direccion valida desde (g.x, 11) que minimice Manhattan a Pac-Man
+    // Direccion inicial: la valida (no-opuesta, no-muro) desde (x, 11) que
+    // minimiza la distancia Manhattan a Pac-Man.
+    const options = Object.keys( DIRS ).filter(
+      ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( game.grid, g.x, g.y, dir, 'ghost' )
+    );
+    const px = Math.round( game.pacman.x );
+    const py = Math.round( game.pacman.y );
+    g.dir = pickByManhattan( options, g, px, py );
   }
 
   const grid = game.grid;
